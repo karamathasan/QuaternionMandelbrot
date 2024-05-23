@@ -66,18 +66,28 @@ Quaternion newQuaternion(){
     );
 }
 
-//Henyey-Greenstein function
-float HG(){
-    return 1.;
+float maxcomp(vec3 v){
+    return max(max(v.x,v.z),v.y);
+    // return max(max(v.x,v.y),v.z);
 }
 
-float maxcomp(vec3 v){
-    return max(max(v.x,v.y),v.z);
+vec3 spaceReptition(vec3 pos,vec3 r){
+    return mod((pos+r/2.),2.*r );
+    // return mod(pos-r/2.,2. * length(r));
+    return pos;
+}
+
+vec3 mandelbrotRepition(vec3 pos, vec3 r){
+    return mod(pos,0.);
 }
 
 float boxSDF(vec3 pos,vec3 r){
+    // pos = spaceReptition(pos,r);
+    // vec3 q = abs(pos)-abs(r);
     vec3 q = abs(pos)-r;
-    return length(max(q, 0.)) + min(maxcomp(q),0.);
+
+    // return length(max(q,0.)) + min(maxcomp(abs(q)),0.);
+    return length(max(q,0.0)) + min(maxcomp(q),0.);
 }
 
 mat2 rotate2D(float theta){
@@ -89,10 +99,15 @@ mat2 rotate2D(float theta){
         s, c
     );
 }
+
+
+
 vec3 mandelbrotVec(Quaternion c){
     const int iterationLimit = 100;
     int count = 0;
-    // c.k = 1.;
+    // if (abs(c.j) > 0.25){
+    //     return vec3(0);
+    // }
     Quaternion z = newQuaternion();
     // z.r=0.5;
     for (int i = 0; i < iterationLimit; i ++){
@@ -151,12 +166,22 @@ vec3 render(vec2 uv){
     float w = 0.5;
     float d = 4.;
     vec3 pos = vec3(d * sin(u_time * w),0,-d * cos(u_time * w)); 
-    // vec3 pos = vec3(0,0,-2); 
+
+    // vec3 pos = vec3(0.,d * sin(u_time * w),-d * cos(u_time * w)); 
+    // vec3 pos = vec3(d * sin(u_time * w),d * sin(u_time * w),-d * cos(u_time * w)); 
+
+    // vec3 pos = vec3(0,0,-d); 
     vec3 rd = vec3(uv.xy,1);
-    rd.xz *= rotate2D(360./6.28 * u_time * w);
-    // rd.yz *= rotate2D(-45.);
-    vec3 prevPos = pos;
     normalize(rd);
+    rd.xz *= rotate2D(360./6.28 * u_time * w);
+    // rd.yz *= rotate2D(360./6.28 * u_time * w);
+
+    // float angle = radians(20. * sin(u_time));
+    // vec3 ro = vec3(-sin(angle), 0 , -d);
+    // pos = ro;
+    // rd.xz *= rotate2D(-degrees(angle));
+    
+    vec3 prevPos = pos;
 
     const int iterationLimit = 350;
     vec3 boxSize = vec3(1.5);
@@ -166,6 +191,7 @@ vec3 render(vec2 uv){
     float dist = 0.;
     float densityIntegration = 0.;
     vec3 densityVec = vec3(0);
+    float BLintegration = 0.;
     bool entered = false;
 
     //ray march to cube fog boundary
@@ -174,15 +200,17 @@ vec3 render(vec2 uv){
         pos += rd * step;
 
         if (step < 0.01){
-            // return vec3(0);
             entered = true;
+            // return vec3(0);
+            // return vec3(1);
             step = 0.05;
         }
 
-        if (length(pos)>100. || (boxSDF(pos,boxSize) < 0.) && i < 2){
+        if (length(pos)>20. || (boxSDF(pos,boxSize) < 0.)){
             //exceeds ray length or is already inside box
             entered = true;
             step = 0.02;
+            // return vec3(1,1,0);
             break;
         }
     }
@@ -192,25 +220,33 @@ vec3 render(vec2 uv){
         prevPos = pos;
         pos += rd * step;
 
-        if (length(pos)>20.){
+        if (length(pos)>100.){
             //exceeds ray length
             break;
         }
 
         if (entered == true){
-            dist += length(pos - prevPos);
-            densityIntegration += length(pos - prevPos) * mandelbrot(VecToQuaternion(pos));
-            densityVec += length(pos-prevPos) * mandelbrotVec(VecToQuaternion(pos));
+            float displacement = length(pos - prevPos);
+            dist += displacement;
+            // float pointDensity = mandelbrot(VecToQuaternion(mandelbrotRepition(pos,boxSize)));
+            float pointDensity = mandelbrot(VecToQuaternion(pos));
+
+            // BLintegration += BeersLaw(displacement, pointDensity);
+            densityIntegration += displacement * pointDensity;
+            // densityVec += length(pos-prevPos) * mandelbrotVec(VecToQuaternion(pos));
+
+            // step += pointDensity;
         }
 
         if (entered == true && boxSDF(pos,boxSize) > 0.){
+            // return vec3(BLintegration/100.);
             //after leaving the box
             
-            // return vec3(densityIntegration);
-            return vec3(BeersLaw(densityIntegration, 0.8));
+            return vec3(densityIntegration);
+            // return vec3(BeersLaw(densityIntegration, 0.8));
             
             // return densityVec;
-            // return densityVec/2. * BeersLaw(densityIntegration,0.8);
+            // return densityVec/2. * (BeersLaw(densityIntegration,0.8));
 
             // return mandelbrotVec(VecToQuaternion(pos * BeersLaw(densityIntegration,0.8)) ) ;
             // return densityVec/3. * BeersLaw(densityIntegration,0.8) + mandelbrotVec(VecToQuaternion(pos));
